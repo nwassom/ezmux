@@ -18,7 +18,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.windowCursor = min(m.windowCursor, max(0, len(m.windows())-1))
 		return m, m.refreshPreview()
 	case previewMsg:
-		m.preview = msg.content
+		m.preview = msg.panes
+		m.previewErr = msg.err
 	case tickMsg:
 		return m, tea.Batch(load(m.client), tea.Tick(350*time.Millisecond, func(t time.Time) tea.Msg { return tickMsg(t) }))
 	case switchMsg:
@@ -72,7 +73,7 @@ func (m Model) refreshPreview() tea.Cmd {
 	if !ok {
 		return nil
 	}
-	return func() tea.Msg { content, _ := m.client.Capture(window); return previewMsg{content} }
+	return func() tea.Msg { panes, err := m.client.Capture(window); return previewMsg{panes, err} }
 }
 func (m Model) windows() []tmux.Window {
 	if m.sessionCursor < 0 || m.sessionCursor >= len(m.sessions) {

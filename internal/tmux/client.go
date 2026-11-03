@@ -8,7 +8,8 @@ import (
 	"strings"
 )
 
-const fieldSeparator = "\x1f"
+// tmux escapes control characters in format output, so this separator arrives as the text "\037".
+const fieldSeparator = "\\037"
 
 type Session struct {
 	ID, Name string
@@ -20,6 +21,17 @@ type Window struct {
 	Name          string
 	Active        bool
 	ActivePaneID  string
+	Panes         []Pane
+}
+type Pane struct {
+	ID, WindowID, Command string
+	Index, Width, Height  int
+	Left, Top             int
+	Active                bool
+}
+type PanePreview struct {
+	Pane    Pane
+	Content string
 }
 type Client struct{}
 
@@ -28,23 +40,55 @@ func (Client) Sessions() ([]Session, error) {
 	if err != nil {
 		return nil, err
 	}
-	var result []Session
-	for _, line := range lines(out) {
-		fields := strings.Split(line, fieldSeparator)
-		if len(fields) != 2 {
-			continue
-		}
-		windows, err := windows(fields[0])
+	result := ParseSessions(out)
+	for i := range result {
+		result[i].Windows, err = windows(result[i].ID)
 		if err != nil {
 			return nil, err
 		}
-		result = append(result, Session{ID: fields[0], Name: fields[1], Windows: windows})
+	}
+	allPanes, err := panes()
+	if err != nil {
+		return nil, err
+	}
+	panesByWindow := make(map[string][]Pane)
+	for _, pane := range allPanes {
+		panesByWindow[pane.WindowID] = append(panesByWindow[pane.WindowID], pane)
+	}
+	for i := range result {
+		for j := range result[i].Windows {
+			result[i].Windows[j].Panes = panesByWindow[result[i].Windows[j].ID]
+		}
 	}
 	return result, nil
 }
 
-func (Client) Capture(window Window) (string, error) {
-	return run("capture-pane", "-p", "-e", "-S", "-100", "-t", window.ActivePaneID)
+func ParseSessions(output string) []Session {
+	var result []Session
+	for _, line := range lines(output) {
+		fields := strings.Split(line, fieldSeparator)
+		if len(fields) != 2 {
+			continue
+		}
+		result = append(result, Session{ID: fields[0], Name: fields[1]})
+	}
+	return result
+}
+
+func (Client) Capture(window Window) ([]PanePreview, error) {
+	panes := window.Panes
+	if len(panes) == 0 && window.ActivePaneID != "" {
+		panes = []Pane{{ID: window.ActivePaneID, Active: true}}
+	}
+	previews := make([]PanePreview, 0, len(panes))
+	for _, pane := range panes {
+		content, err := run("capture-pane", "-p", "-e", "-S", "-100", "-t", pane.ID)
+		if err != nil {
+			return nil, err
+		}
+		previews = append(previews, PanePreview{Pane: pane, Content: content})
+	}
+	return previews, nil
 }
 func (Client) Switch(session Session, window Window) error {
 	_, err := run("switch-client", "-t", session.ID+":"+window.ID)
@@ -58,6 +102,41 @@ func windows(sessionID string) ([]Window, error) {
 		return nil, err
 	}
 	return ParseWindows(out), nil
+}
+
+func panes() ([]Pane, error) {
+	fields := []string{"#{window_id}", "#{pane_id}", "#{pane_index}", "#{pane_active}", "#{pane_width}", "#{pane_height}", "#{pane_left}", "#{pane_top}", "#{pane_current_command}"}
+	format := strings.Join(fields, fieldSeparator)
+	out, err := run("list-panes", "-a", "-F", format)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePanes(out), nil
+}
+
+func ParsePanes(output string) []Pane {
+	var result []Pane
+	for _, line := range lines(output) {
+		fields := strings.Split(line, fieldSeparator)
+		if len(fields) != 9 {
+			continue
+		}
+		values := [5]int{}
+		valid := true
+		for i, fieldIndex := range []int{2, 4, 5, 6, 7} {
+			value, err := strconv.Atoi(fields[fieldIndex])
+			if err != nil {
+				valid = false
+				break
+			}
+			values[i] = value
+		}
+		if !valid {
+			continue
+		}
+		result = append(result, Pane{WindowID: fields[0], ID: fields[1], Index: values[0], Active: fields[3] == "1", Width: values[1], Height: values[2], Left: values[3], Top: values[4], Command: fields[8]})
+	}
+	return result
 }
 
 func ParseWindows(output string) []Window {

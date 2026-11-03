@@ -11,14 +11,18 @@ type sessionsMsg struct {
 	sessions []tmux.Session
 	err      error
 }
-type previewMsg struct{ content string }
+type previewMsg struct {
+	panes []tmux.PanePreview
+	err   error
+}
 type tickMsg time.Time
 
 type Model struct {
 	client                      tmux.Client
 	sessions                    []tmux.Session
 	sessionCursor, windowCursor int
-	preview                     string
+	preview                     []tmux.PanePreview
+	previewErr                  error
 	err                         error
 	width, height               int
 }
