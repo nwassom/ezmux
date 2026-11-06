@@ -31,11 +31,9 @@ func (m Model) View() tea.View {
 		return view
 	}
 
-	windowRows := min(10, max(1, (height-8)/3))
+	start, end, windowOffset, windowRows := m.windowViewport()
 	previewRows := max(1, height-windowRows-6)
 	windows := m.windows()
-	start, end := visibleWindowRange(len(windows), m.windowCursor, windowRows)
-	windowOffset := max(0, (windowRows-len(windows))/2)
 
 	heading := fmt.Sprintf("WINDOWS — %s (%d)", m.selectedSessionName(), len(windows))
 	if start > 0 {
@@ -76,10 +74,11 @@ func (m Model) View() tea.View {
 		lines = append(lines, center(frameLine(line, panelWidth), width))
 	}
 	lines = append(lines, center(panelBorder.Render("╰"+strings.Repeat("─", panelWidth-2)+"╯"), width))
-	lines = append(lines, center(muted.Render("h/l sessions   j/k windows   0-9 jump   enter switch   esc quit"), width))
+	lines = append(lines, center(ansi.Truncate(muted.Render("h/l sessions · j/k windows · enter switch · mouse hover/click · esc quit"), width, "…"), width))
 
 	view := tea.NewView(fillBackground(strings.Join(lines, "\n"), width, background))
 	view.BackgroundColor = background
+	view.MouseMode = tea.MouseModeAllMotion
 	return view
 }
 
@@ -88,8 +87,7 @@ func (m Model) sessionTabs(width int) string {
 		return muted.Render("no tmux sessions")
 	}
 	labels := make([]string, 0, len(m.sessions))
-	for i, session := range m.sessions {
-		label := fmt.Sprintf(" %s ", clip(session.Name, max(8, width/len(m.sessions)-2)))
+	for i, label := range m.sessionLabels(width) {
 		if i == m.sessionCursor {
 			labels = append(labels, selected.Render(label))
 		} else {
@@ -97,6 +95,60 @@ func (m Model) sessionTabs(width int) string {
 		}
 	}
 	return strings.Join(labels, "  ")
+}
+
+func (m Model) sessionLabels(width int) []string {
+	labels := make([]string, len(m.sessions))
+	for i, session := range m.sessions {
+		labels[i] = fmt.Sprintf(" %s ", clip(session.Name, max(8, width/len(m.sessions)-2)))
+	}
+	return labels
+}
+
+func (m Model) sessionAt(x int) int {
+	width := max(32, m.width-2)
+	labels := m.sessionLabels(width)
+	totalWidth := max(0, len(labels)-1) * 2
+	for _, label := range labels {
+		totalWidth += lipgloss.Width(label)
+	}
+	left := max(0, (width-totalWidth)/2)
+	if totalWidth > width {
+		left = 0
+	}
+	for i, label := range labels {
+		right := left + lipgloss.Width(label)
+		if x >= left && x < right && x < width {
+			return i
+		}
+		left = right + 2
+	}
+	return -1
+}
+
+func (m Model) windowAt(y int) int {
+	start, end, offset, rows := m.windowViewport()
+	row := y - 2
+	if row < 0 || row >= rows {
+		return -1
+	}
+	index := start + row - offset
+	if index < start || index >= end {
+		return -1
+	}
+	return index
+}
+
+func (m Model) windowViewport() (start, end, offset, rows int) {
+	rows = min(10, max(1, (max(8, m.height)-8)/3))
+	windows := m.windows()
+	start, end = visibleWindowRange(len(windows), m.windowCursor, rows)
+	if m.windowScrollFrozen {
+		start = min(max(0, m.windowScrollStart), max(0, len(windows)-rows))
+		end = min(len(windows), start+rows)
+	}
+	offset = max(0, (rows-(end-start))/2)
+	return
 }
 
 func (m Model) previewTitle() string {

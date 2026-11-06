@@ -3,6 +3,7 @@ package tmux
 import (
 	"bytes"
 	"fmt"
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -34,6 +35,41 @@ type PanePreview struct {
 	Content string
 }
 type Client struct{}
+
+func (Client) ResizePopup() error {
+	if os.Getenv("EZMUX_POPUP") != "1" {
+		return nil
+	}
+	paneID := os.Getenv("TMUX_PANE")
+	if paneID == "" {
+		return nil
+	}
+	out, err := run("display-message", "-p", "-t", paneID, "#{pane_width} #{pane_height} #{window_width} #{window_height}")
+	if err != nil {
+		return err
+	}
+	fields := strings.Fields(out)
+	if len(fields) != 4 {
+		return fmt.Errorf("unexpected popup dimensions: %q", out)
+	}
+	dimensions := [4]int{}
+	for i, field := range fields {
+		dimensions[i], err = strconv.Atoi(field)
+		if err != nil {
+			return err
+		}
+	}
+	width, height := popupSize(dimensions[2], dimensions[3])
+	if dimensions[0] == width && dimensions[1] == height {
+		return nil
+	}
+	_, err = run("resize-pane", "-t", paneID, "-x", strconv.Itoa(width), "-y", strconv.Itoa(height))
+	return err
+}
+
+func popupSize(width, height int) (int, int) {
+	return max(1, width*85/100), max(1, height*80/100)
+}
 
 func (Client) Sessions() ([]Session, error) {
 	out, err := run("list-sessions", "-F", "#{session_id}"+fieldSeparator+"#{session_name}")

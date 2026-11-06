@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/nwassom/ezmux/internal/tmux"
@@ -38,6 +39,9 @@ func TestViewCentersSelectedWindowAndShowsItsPreview(t *testing.T) {
 	lines := strings.Split(view.Content, "\n")
 	if view.BackgroundColor == nil {
 		t.Fatal("view has no opaque background color")
+	}
+	if view.MouseMode != tea.MouseModeAllMotion {
+		t.Fatal("view does not enable mouse hover and clicks")
 	}
 	if !strings.Contains(lines[0], "work") || !strings.Contains(lines[1], "WINDOWS") || !strings.Contains(lines[6], "PREVIEW") {
 		t.Fatalf("session/window headings are missing: %q", lines)

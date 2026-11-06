@@ -21,6 +21,8 @@ type Model struct {
 	client                      tmux.Client
 	sessions                    []tmux.Session
 	sessionCursor, windowCursor int
+	windowScrollStart           int
+	windowScrollFrozen          bool
 	preview                     []tmux.PanePreview
 	previewErr                  error
 	err                         error

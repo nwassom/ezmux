@@ -51,3 +51,10 @@ func TestParsePanes(t *testing.T) {
 		t.Fatalf("unexpected panes: %#v", panes)
 	}
 }
+
+func TestPopupSizeTracksClientSize(t *testing.T) {
+	width, height := popupSize(200, 100)
+	if width != 170 || height != 80 {
+		t.Fatalf("popup size = %dx%d, want 170x80", width, height)
+	}
+}
